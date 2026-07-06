@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SNS 최종 보고서 인사이트 생성기</title>
+<style>
+  :root{--bg:#FAFAF9;--panel:#fff;--ink:#1A1A1A;--muted:#6A6A6A;--faint:#9A9A9A;--line:#E2E2DF;--focus:#2C6E9B;
+        --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;}
+  *{box-sizing:border-box}
+  body{font-family:var(--sans);color:var(--ink);background:var(--bg);margin:0;line-height:1.65}
+  .container{max-width:1040px;margin:0 auto;padding:0 22px 48px}
+  header{padding:22px 0 16px;border-bottom:1px solid var(--line);margin-bottom:24px}
+  header h1{font-size:17px;margin:0}
+  header .sub{font-size:12.5px;color:var(--muted);margin-top:3px}
+  .layout{display:grid;grid-template-columns:380px 1fr;gap:24px;align-items:start}
+  @media (max-width:800px){.layout{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px}
+  .card h2{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin:0;padding:14px 18px;border-bottom:1px solid var(--line)}
+  .body{padding:18px}
+  .field{margin-bottom:16px}
+  .field label{display:block;font-size:13px;font-weight:600;margin-bottom:6px}
+  .field .hint{font-size:12px;color:var(--muted);margin-top:5px}
+  textarea,select{width:100%;font-family:var(--sans);font-size:13.5px;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:6px;padding:10px 11px}
+  textarea{resize:vertical}
+  select{appearance:none;cursor:pointer}
+  textarea:focus,select:focus,.gen:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+  .gen{width:100%;margin-top:6px;font-size:14px;font-weight:600;color:#fff;background:var(--ink);border:none;border-radius:6px;padding:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
+  .gen[disabled]{background:#8A8A8A;cursor:default}
+  .spin{width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;animation:sp .7s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .rhead{display:flex;align-items:center;justify-content:space-between;padding:11px 18px;border-bottom:1px solid var(--line)}
+  .rhead h2{border:0;padding:0}
+  .copy{font-size:12px;border:1px solid var(--line);border-radius:5px;padding:6px 12px;cursor:pointer;background:#fff}
+  .empty{padding:52px 26px;text-align:center;color:var(--faint);font-size:13.5px}
+  .out{white-space:pre-wrap;font-size:13.5px;color:#242424;padding:20px 22px}
+  .err{color:#B23;font-size:13px;padding:16px 22px}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>SNS 최종 보고서 인사이트 생성기</h1>
+    <div class="sub">보고서 내용·카톡·조건을 넣으면 4·5번 인사이트·제언을 작성합니다. 결과를 복사해 보고서에 붙여넣으세요.</div>
+  </header>
+
+  <div class="layout">
+    <section class="card">
+      <h2>입력</h2>
+      <div class="body">
+        <div class="field">
+          <label for="report">최종 보고서 내용</label>
+          <textarea id="report" rows="8" placeholder="보고서의 표·수치(요약, 광고세트, 소재, 연령·성별, 노출위치 등)를 복사해 붙여넣으세요."></textarea>
+          <div class="hint">구글 문서 내용을 복사해 붙여넣기 (링크 자동 불러오기는 추후 지원).</div>
+        </div>
+        <div class="field">
+          <label for="kakao">광고주 카톡 (선택)</label>
+          <textarea id="kakao" rows="5" placeholder="운영 중 주고받은 카톡 내용(소재·타겟·랜딩 변경, 주차별 지표 등)을 붙여넣으세요."></textarea>
+        </div>
+        <div class="field">
+          <label for="level">광고주 숙련도</label>
+          <select id="level"><option>초심자</option><option>경험자</option></select>
+        </div>
+        <div class="field">
+          <label for="landing">랜딩페이지</label>
+          <select id="landing"><option>입점몰·플랫폼 (스마트스토어·오늘의집·무신사·29CM 등)</option><option>자사몰 (직접 도메인)</option></select>
+        </div>
+        <button class="gen" id="gen">인사이트 생성</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="rhead"><h2>결과 · 4·5번</h2><button class="copy" id="copy" style="display:none">복사</button></div>
+      <div class="empty" id="empty">왼쪽에 내용을 넣고 <b>인사이트 생성</b>을 누르세요.</div>
+      <div class="out" id="out" style="display:none"></div>
+      <div class="err" id="err" style="display:none"></div>
+    </section>
+  </div>
+</div>
+
+<script>
+  var gen=document.getElementById('gen'),empty=document.getElementById('empty'),out=document.getElementById('out'),
+      err=document.getElementById('err'),copy=document.getElementById('copy');
+  gen.addEventListener('click',async function(){
+    var report=document.getElementById('report').value.trim();
+    if(!report){alert('보고서 내용을 붙여넣어 주세요.');return;}
+    gen.disabled=true;gen.innerHTML='<span class="spin"></span> 생성 중…';
+    empty.style.display='none';out.style.display='none';err.style.display='none';
+    try{
+      var res=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({report:report,kakao:document.getElementById('kakao').value,
+          level:document.getElementById('level').value,landing:document.getElementById('landing').value})});
+      var data=await res.json();
+      if(!res.ok){throw new Error(data.error||'생성 실패');}
+      out.textContent=data.text;out.style.display='block';copy.style.display='inline-block';
+    }catch(e){err.textContent='오류: '+e.message;err.style.display='block';}
+    gen.disabled=false;gen.textContent='다시 생성';
+  });
+  copy.addEventListener('click',function(){navigator.clipboard&&navigator.clipboard.writeText(out.textContent);
+    copy.textContent='복사됨 ✓';setTimeout(function(){copy.textContent='복사';},1500);});
+</script>
+</body>
+</html>
