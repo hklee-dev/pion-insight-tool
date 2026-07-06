@@ -1,5 +1,6 @@
 // Vercel serverless function: POST /api/generate
 // 환경변수 OPENROUTER_API_KEY 에 OpenRouter 키를 넣어두면 됩니다(코드에 키를 적지 마세요).
+// 환경변수 LOG_WEBHOOK_URL 에 구글 Apps Script 웹앱 URL을 넣으면 모든 생성 건이 시트에 기록됩니다(선택).
 // 모델 슬러그는 https://openrouter.ai/models 에서 현재 Claude 모델로 맞추세요.
 const MODEL = "anthropic/claude-sonnet-4.5"; // 필요 시 openrouter.ai/models 의 최신 Claude 슬러그로 교체
 
@@ -34,7 +35,6 @@ async function fetchGoogleDoc(link) {
   const url = `https://docs.google.com/document/d/${docId}/export?format=txt`;
   const r = await fetch(url, { redirect: "follow" });
   const text = await r.text();
-  // 로그인 페이지(HTML)가 오면 = 공유가 '링크가 있는 모든 사용자'가 아님
   if (!r.ok || /<html|<!DOCTYPE|accounts\.google\.com|ServiceLogin|Sign in|로그인/i.test(text.slice(0, 3000))) {
     return { error: "구글 문서를 열 수 없습니다. 문서 공유를 '링크가 있는 모든 사용자 · 뷰어'로 설정한 뒤 다시 시도하세요." };
   }
@@ -42,15 +42,35 @@ async function fetchGoogleDoc(link) {
   return { text };
 }
 
+// 모든 생성 건을 구글 시트(Apps Script 웹훅)에 기록 — 성공/실패 상관없이. best-effort.
+async function logRun(payload) {
+  const url = process.env.LOG_WEBHOOK_URL;
+  if (!url) return;
+  try {
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (_) { /* 로깅 실패해도 생성에는 영향 없음 */ }
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "POST only" }); return; }
+  const body = req.body || {};
+  const drive = body.drive || "";
+  const csv = body.csv || "";
+  const level = body.level || "";
+  const landing = body.landing || "";
   try {
-    const { drive, csv, level, landing } = req.body || {};
-    if (!drive || !String(drive).trim()) { res.status(400).json({ error: "최종 보고서 구글 문서 링크를 입력하세요." }); return; }
-    if (!csv || !String(csv).trim()) { res.status(400).json({ error: "광고주 카톡 CSV 내용이 비어 있습니다." }); return; }
+    if (!drive.trim()) { res.status(400).json({ error: "최종 보고서 구글 문서 링크를 입력하세요." }); return; }
+    if (!csv.trim()) { res.status(400).json({ error: "광고주 카톡 CSV 내용이 비어 있습니다." }); return; }
 
     const doc = await fetchGoogleDoc(drive);
-    if (doc.error) { res.status(400).json({ error: doc.error }); return; }
+    if (doc.error) {
+      await logRun({ level, landing, drive, csv, output: "", error: doc.error });
+      res.status(400).json({ error: doc.error }); return;
+    }
 
     const user =
       `[대상자] ${level || "초심자"}\n` +
@@ -67,22 +87,22 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: MODEL,
-        messages: [
-          { role: "system", content: SYSTEM },
-          { role: "user", content: user },
-        ],
+        messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }],
       }),
     });
 
     if (!r.ok) {
       const t = await r.text();
+      await logRun({ level, landing, drive, csv, output: "", error: "생성 서버 오류: " + t.slice(0, 300) });
       res.status(502).json({ error: "생성 서버 오류", detail: t.slice(0, 500) });
       return;
     }
     const data = await r.json();
     const text = data?.choices?.[0]?.message?.content || "(생성 결과가 비어 있습니다)";
+    await logRun({ level, landing, drive, csv, output: text, error: "" });
     res.status(200).json({ text });
   } catch (e) {
+    await logRun({ level, landing, drive, csv, output: "", error: "요청 처리 오류: " + String(e).slice(0, 300) });
     res.status(500).json({ error: "요청 처리 중 오류", detail: String(e).slice(0, 300) });
   }
 }
