@@ -83,7 +83,7 @@
     </section>
 
     <section class="card">
-      <div class="rhead"><h2>결과 · 4·5번</h2><button class="copy" id="copy" style="display:none">복사</button></div>
+      <div class="rhead"><h2>결과 · 4·5번</h2><span id="copybtns" style="display:none"><button class="copy" id="copy4">4번 복사</button> <button class="copy" id="copy5" style="margin-left:6px">5번 복사</button></span></div>
       <div class="empty" id="empty">왼쪽에 보고서 링크·카톡 CSV를 넣고 <b>인사이트 생성</b>을 누르세요.</div>
       <div class="out" id="out" style="display:none"></div>
       <div class="err" id="err" style="display:none"></div>
@@ -93,7 +93,7 @@
 
 <script>
   var gen=document.getElementById('gen'),empty=document.getElementById('empty'),out=document.getElementById('out'),
-      err=document.getElementById('err'),copy=document.getElementById('copy'),
+      err=document.getElementById('err'),copybtns=document.getElementById('copybtns'),copy4=document.getElementById('copy4'),copy5=document.getElementById('copy5'),
       drive=document.getElementById('drive'),csv=document.getElementById('csv'),
       level=document.getElementById('level'),landing=document.getElementById('landing');
 
@@ -118,12 +118,24 @@
         body:JSON.stringify({drive:drive.value.trim(),csv:csvText,level:level.value,landing:landing.value})});
       var data=await res.json();
       if(!res.ok){throw new Error(data.error||'생성 실패');}
-      out.textContent=data.text;out.style.display='block';copy.style.display='inline-block';
+      out.textContent=data.text;out.style.display='block';copybtns.style.display='inline-block';
     }catch(e){err.textContent='오류: '+e.message;err.style.display='block';}
     gen.textContent='다시 생성';refresh();
   });
-  copy.addEventListener('click',function(){navigator.clipboard&&navigator.clipboard.writeText(out.textContent);
-    copy.textContent='복사됨 ✓';setTimeout(function(){copy.textContent='복사';},1500);});
+  function splitParts(){
+    var t=out.textContent||'';
+    var i=t.indexOf('5. 향후 제언');
+    var p4=(i>=0?t.slice(0,i):t).replace(/^\s*4\.\s*인사이트\s*\n+/,'').trim();
+    var p5=(i>=0?t.slice(i):'').replace(/^\s*5\.\s*향후\s*제언\s*\n+/,'').trim();
+    return {p4:p4,p5:p5};
+  }
+  function doCopy(btn,text,label){
+    if(!text){alert('복사할 내용이 없습니다.');return;}
+    navigator.clipboard&&navigator.clipboard.writeText(text);
+    btn.textContent='복사됨 ✓';setTimeout(function(){btn.textContent=label;},1500);
+  }
+  copy4.addEventListener('click',function(){doCopy(copy4,splitParts().p4,'4번 복사');});
+  copy5.addEventListener('click',function(){doCopy(copy5,splitParts().p5,'5번 복사');});
 </script>
 </body>
 </html>
