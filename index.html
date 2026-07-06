@@ -20,11 +20,13 @@
   .body{padding:18px}
   .field{margin-bottom:16px}
   .field label{display:block;font-size:13px;font-weight:600;margin-bottom:6px}
+  .field label .opt{font-weight:500;color:var(--faint)}
+  .field label .req{font-weight:600;color:#C0392B}
   .field .hint{font-size:12px;color:var(--muted);margin-top:5px}
-  textarea,select{width:100%;font-family:var(--sans);font-size:13.5px;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:6px;padding:10px 11px}
-  textarea{resize:vertical}
+  textarea,select,input[type=url],input[type=file]{width:100%;font-family:var(--sans);font-size:13.5px;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:6px;padding:10px 11px}
+  input[type=file]{padding:8px 11px;cursor:pointer}
   select{appearance:none;cursor:pointer}
-  textarea:focus,select:focus,.gen:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+  textarea:focus,select:focus,input:focus,.gen:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
   .gen{width:100%;margin-top:6px;font-size:14px;font-weight:600;color:#fff;background:var(--ink);border:none;border-radius:6px;padding:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
   .gen[disabled]{background:#8A8A8A;cursor:default}
   .spin{width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;animation:sp .7s linear infinite}
@@ -34,7 +36,7 @@
   .copy{font-size:12px;border:1px solid var(--line);border-radius:5px;padding:6px 12px;cursor:pointer;background:#fff}
   .empty{padding:52px 26px;text-align:center;color:var(--faint);font-size:13.5px}
   .out{white-space:pre-wrap;font-size:13.5px;color:#242424;padding:20px 22px}
-  .err{color:#B23;font-size:13px;padding:16px 22px}
+  .err{color:#B23;font-size:13px;padding:16px 22px;white-space:pre-wrap}
   @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
 </head>
@@ -42,7 +44,7 @@
 <div class="container">
   <header>
     <h1>SNS 최종 보고서 인사이트 생성기</h1>
-    <div class="sub">보고서 내용·카톡·조건을 넣으면 4·5번 인사이트·제언을 작성합니다. 결과를 복사해 보고서에 붙여넣으세요.</div>
+    <div class="sub">보고서 링크·카톡 CSV·조건을 넣으면 4·5번 인사이트·제언을 작성합니다. 결과를 복사해 보고서에 붙여넣으세요.</div>
   </header>
 
   <div class="layout">
@@ -50,13 +52,14 @@
       <h2>입력</h2>
       <div class="body">
         <div class="field">
-          <label for="report">최종 보고서 내용</label>
-          <textarea id="report" rows="8" placeholder="보고서의 표·수치(요약, 광고세트, 소재, 연령·성별, 노출위치 등)를 복사해 붙여넣으세요."></textarea>
-          <div class="hint">구글 문서 내용을 복사해 붙여넣기 (링크 자동 불러오기는 추후 지원).</div>
+          <label for="drive">최종 보고서 <span class="opt">· 구글 문서 링크</span></label>
+          <input id="drive" type="url" placeholder="https://docs.google.com/document/d/.../edit">
+          <div class="hint">구글 문서 공유 링크를 붙여넣으세요. 공유 설정은 <b>'링크가 있는 모든 사용자 · 뷰어'</b> 여야 자동으로 읽어옵니다.</div>
         </div>
         <div class="field">
-          <label for="kakao">광고주 카톡 (선택)</label>
-          <textarea id="kakao" rows="5" placeholder="운영 중 주고받은 카톡 내용(소재·타겟·랜딩 변경, 주차별 지표 등)을 붙여넣으세요."></textarea>
+          <label for="csv">광고주 카톡 CSV <span class="req">· 필수</span></label>
+          <input id="csv" type="file" accept=".csv">
+          <div class="hint">카카오톡 대화 내보내기 CSV 파일을 첨부하세요.</div>
         </div>
         <div class="field">
           <label for="level">광고주 숙련도</label>
@@ -72,7 +75,7 @@
 
     <section class="card">
       <div class="rhead"><h2>결과 · 4·5번</h2><button class="copy" id="copy" style="display:none">복사</button></div>
-      <div class="empty" id="empty">왼쪽에 내용을 넣고 <b>인사이트 생성</b>을 누르세요.</div>
+      <div class="empty" id="empty">왼쪽에 보고서 링크·카톡 CSV를 넣고 <b>인사이트 생성</b>을 누르세요.</div>
       <div class="out" id="out" style="display:none"></div>
       <div class="err" id="err" style="display:none"></div>
     </section>
@@ -83,13 +86,17 @@
   var gen=document.getElementById('gen'),empty=document.getElementById('empty'),out=document.getElementById('out'),
       err=document.getElementById('err'),copy=document.getElementById('copy');
   gen.addEventListener('click',async function(){
-    var report=document.getElementById('report').value.trim();
-    if(!report){alert('보고서 내용을 붙여넣어 주세요.');return;}
+    var drive=document.getElementById('drive').value.trim();
+    var csvFile=document.getElementById('csv').files[0];
+    if(!drive){alert('최종 보고서 구글 문서 링크를 입력하세요.');return;}
+    if(!/\/document\/d\//.test(drive)){alert('올바른 구글 문서 링크가 아닙니다.\n예: https://docs.google.com/document/d/.../edit');return;}
+    if(!csvFile){alert('광고주 카톡 CSV 파일을 첨부하세요. (필수)');return;}
     gen.disabled=true;gen.innerHTML='<span class="spin"></span> 생성 중…';
     empty.style.display='none';out.style.display='none';err.style.display='none';
     try{
+      var csvText=await csvFile.text();
       var res=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({report:report,kakao:document.getElementById('kakao').value,
+        body:JSON.stringify({drive:drive,csv:csvText,
           level:document.getElementById('level').value,landing:document.getElementById('landing').value})});
       var data=await res.json();
       if(!res.ok){throw new Error(data.error||'생성 실패');}
