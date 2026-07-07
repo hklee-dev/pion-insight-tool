@@ -92,7 +92,7 @@ export default async function handler(req, res) {
 
     const doc = await fetchGoogleDoc(drive);
     if (doc.error) {
-      await logRun({ advertiser: "", level, landing, drive, csv, insight: "", rec: "", error: doc.error });
+      await logRun({ advertiser: "", level, landing, drive, insight: "", rec: "", error: doc.error });
       res.status(400).json({ error: doc.error }); return;
     }
     const advertiser = extractAdvertiser(doc.text);
@@ -118,17 +118,17 @@ export default async function handler(req, res) {
 
     if (!r.ok) {
       const t = await r.text();
-      await logRun({ advertiser, level, landing, drive, csv, insight: "", rec: "", error: "생성 서버 오류: " + t.slice(0, 300) });
+      await logRun({ advertiser, level, landing, drive, insight: "", rec: "", error: "생성 서버 오류: " + t.slice(0, 300) });
       res.status(502).json({ error: "생성 서버 오류", detail: t.slice(0, 500) });
       return;
     }
     const data = await r.json();
     const text = data?.choices?.[0]?.message?.content || "(생성 결과가 비어 있습니다)";
     const parts = splitSections(text);
-    await logRun({ advertiser, level, landing, drive, csv, insight: parts.p4, rec: parts.p5, error: "" });
+    await logRun({ advertiser, level, landing, drive, insight: parts.p4, rec: parts.p5, error: "" });
     res.status(200).json({ text });
   } catch (e) {
-    await logRun({ advertiser: "", level, landing, drive, csv, insight: "", rec: "", error: "요청 처리 오류: " + String(e).slice(0, 300) });
+    await logRun({ advertiser: "", level, landing, drive, insight: "", rec: "", error: "요청 처리 오류: " + String(e).slice(0, 300) });
     res.status(500).json({ error: "요청 처리 중 오류", detail: String(e).slice(0, 300) });
   }
 }
