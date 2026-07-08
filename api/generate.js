@@ -124,8 +124,10 @@ export default async function handler(req, res) {
       return { ok: rr.ok, raw: await rr.text() };
     }
 
+    const t0 = Date.now();
     let resp = await askAI();
-    if (resp.ok && !resp.raw.trim()) resp = await askAI(); // 빈 응답이면 한 번 더 시도
+    // 빈 응답이고 아직 시간 여유가 있을 때만 1회 재시도 (재시도가 오히려 타임아웃을 유발하지 않도록).
+    if (resp.ok && !resp.raw.trim() && Date.now() - t0 < 25000) resp = await askAI();
 
     if (!resp.ok) {
       await logRun({ advertiser, level, landing, drive, insight: "", rec: "", error: "생성 서버 오류: " + resp.raw.slice(0, 300) });

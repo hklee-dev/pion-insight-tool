@@ -116,8 +116,14 @@
       var csvText=await csv.files[0].text();
       var res=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({drive:drive.value.trim(),csv:csvText,level:level.value,landing:landing.value})});
-      var data=await res.json();
-      if(!res.ok){throw new Error(data.error||'생성 실패');}
+      var raw=await res.text();
+      var data=null; try{ data=JSON.parse(raw); }catch(_){}
+      if(!res.ok || !data){
+        var msg = (data&&data.error) ? data.error
+          : (res.status>=500) ? '생성이 시간 안에 끝나지 않았습니다(보고서가 길면 종종 발생). 한 번 더 눌러 주세요.'
+          : '생성에 실패했습니다. 잠시 후 다시 시도해 주세요.';
+        throw new Error(msg);
+      }
       out.textContent=data.text;out.style.display='block';copybtns.style.display='inline-block';
     }catch(e){err.textContent='오류: '+e.message;err.style.display='block';}
     gen.textContent='다시 생성';refresh();
