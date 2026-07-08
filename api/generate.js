@@ -105,15 +105,15 @@ export default async function handler(req, res) {
     }
     const advertiser = extractAdvertiser(doc.text);
 
-    const user =
+    const baseUser =
       `[대상자] ${level || "초심자"}\n` +
       `[랜딩] ${landing || "미지정"}\n\n` +
       `[최종 보고서]\n${doc.text}\n\n` +
-      `[광고주 카톡 (CSV: DATE,USER,MESSAGE)]\n${csv}\n\n` +
-      `위 규칙에 따라 "4. 인사이트"와 "5. 향후 제언"만, 마크다운 기호 없이 플레인 텍스트로 작성해줘.`;
+      `[광고주 카톡 (CSV: DATE,USER,MESSAGE)]\n${csv}\n`;
 
-    // OpenRouter 호출 — 빈/깨진 응답(일시적 오류)이면 1회 자동 재시도.
-    async function askAI() {
+    // 인사이트(4)와 제언(5)을 별도 호출로 "병렬" 생성한다.
+    // 각 섹션이 짧아 60초 제한 안에서 완결되므로 긴 보고서에서도 짤리지 않는다(병렬이라 벽시계는 둘 중 느린 쪽).
+    async function askAI(instruction) {
       const rr = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -122,42 +122,39 @@ export default async function handler(req, res) {
         },
         body: JSON.stringify({
           model: MODEL,
-          max_tokens: 3000, // 출력 상한 — 생성 시간을 Vercel 60초 제한 안(≈50초)으로 묶는다. 간결한 4·5엔 충분.
-          messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }],
+          max_tokens: 2800, // 한 섹션 상한 — 병렬이라 각 ~40초, 벽시계 ~45초로 60초 안. 한 섹션 완결엔 충분.
+          messages: [
+            { role: "system", content: SYSTEM },
+            { role: "user", content: baseUser + "\n" + instruction },
+          ],
         }),
       });
-      return { ok: rr.ok, raw: await rr.text() };
+      const raw = await rr.text();
+      if (!rr.ok) return { ok: false, content: "", err: raw.slice(0, 200) };
+      let content = "";
+      if (raw.trim()) { try { content = JSON.parse(raw)?.choices?.[0]?.message?.content || ""; } catch (_) {} }
+      return { ok: true, content: content.trim(), err: "" };
     }
 
-    const t0 = Date.now();
-    let resp = await askAI();
-    // 빈 응답이고 아직 시간 여유가 있을 때만 1회 재시도 (재시도가 오히려 타임아웃을 유발하지 않도록).
-    if (resp.ok && !resp.raw.trim() && Date.now() - t0 < 25000) resp = await askAI();
+    const [ins, rec] = await Promise.all([
+      askAI(`이번 응답에는 "4. 인사이트"만 작성해. "5. 향후 제언"은 별도로 작성되니 여기서는 절대 쓰지 마. 인사이트는 진단(무엇이 보였고 왜 그런가)까지만.`),
+      askAI(`이번 응답에는 "5. 향후 제언"만 작성해. "4. 인사이트"는 별도로 작성되니 진단을 길게 재서술하지 말고, 바로 실행 제언(① ② ③ …)만 써.`),
+    ]);
 
-    if (!resp.ok) {
-      await logRun({ advertiser, level, landing, drive, insight: "", rec: "", error: "생성 서버 오류: " + resp.raw.slice(0, 300) });
-      res.status(502).json({ error: "생성 서버 오류", detail: resp.raw.slice(0, 500) });
+    if (!ins.content || !rec.content) {
+      const err = ins.err || rec.err || "AI 응답이 비어 있음(일시적 오류)";
+      await logRun({ advertiser, level, landing, drive, insight: "", rec: "", error: "생성 실패: " + err });
+      res.status(502).json({ error: "생성에 실패했습니다. 잠시 후 다시 한 번 눌러 주세요." });
       return;
     }
-    if (!resp.raw.trim()) {
-      await logRun({ advertiser, level, landing, drive, insight: "", rec: "", error: "AI 응답이 비어 있습니다(일시적 오류로 보입니다). 잠시 후 다시 시도해 주세요." });
-      res.status(502).json({ error: "AI 응답이 비어 왔습니다. 잠시 후 다시 한 번 시도해 주세요." });
-      return;
-    }
-    let data;
-    try {
-      data = JSON.parse(resp.raw);
-    } catch (_) {
-      await logRun({ advertiser, level, landing, drive, insight: "", rec: "", error: "AI 응답 해석 실패: " + resp.raw.slice(0, 200) });
-      res.status(502).json({ error: "AI 응답을 해석하지 못했습니다. 다시 시도해 주세요." });
-      return;
-    }
-    const rawText = data?.choices?.[0]?.message?.content || "(생성 결과가 비어 있습니다)";
-    // 숫자 범위의 물결표(~ ／ 전각～ ／ 물결대시〜)를 엔대시(–)로 강제 치환.
-    // 모델이 규칙을 어기고 물결표(일본어식 ～/〜 포함)를 써도 결과엔 안 나오게 방어.
-    const text = rawText
-      .replace(/([0-9])\s*[~～〜]\s*([0-9])/g, "$1–$2") // 숫자 범위 물결표 → 엔대시
-      .replace(/です/g, "다");                          // 일본어 종결 'です' 혼입 방어 (예: '중요합니です'→'중요합니다')
+
+    // 섹션 헤더 보장 후 결합.
+    const ensureHead = (body, header) => (body.startsWith(header) ? body : header + "\n" + body);
+    let text = ensureHead(ins.content, "4. 인사이트") + "\n\n" + ensureHead(rec.content, "5. 향후 제언");
+    // 숫자 범위 물결표(~ 전각～ 물결대시〜)→엔대시, 일본어 종결 'です'→'다' 강제 치환.
+    text = text
+      .replace(/([0-9])\s*[~～〜]\s*([0-9])/g, "$1–$2")
+      .replace(/です/g, "다");
     const parts = splitSections(text);
     await logRun({ advertiser, level, landing, drive, insight: parts.p4, rec: parts.p5, error: "" });
     res.status(200).json({ text });
