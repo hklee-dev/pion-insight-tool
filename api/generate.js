@@ -4,6 +4,9 @@
 // 모델 슬러그는 https://openrouter.ai/models 에서 현재 Claude 모델로 맞추세요.
 const MODEL = "anthropic/claude-sonnet-4.5"; // 필요 시 openrouter.ai/models 의 최신 Claude 슬러그로 교체
 
+// 긴 보고서 생성이 기본 제한(10초)에 잘리지 않도록 실행시간 확보.
+export const config = { maxDuration: 60 };
+
 const SYSTEM = `너는 파이온의 SNS 광고 최종 보고서 분석가야. 주어진 [최종 보고서]와 [조건]을 보고 보고서의 "4. 인사이트"와 "5. 향후 제언"만 작성해. 구글 문서에 그대로 붙여넣을 플레인 텍스트로.
 
 [출력 형식 — 매우 중요]
@@ -104,25 +107,43 @@ export default async function handler(req, res) {
       `[광고주 카톡 (CSV: DATE,USER,MESSAGE)]\n${csv}\n\n` +
       `위 규칙에 따라 "4. 인사이트"와 "5. 향후 제언"만, 마크다운 기호 없이 플레인 텍스트로 작성해줘.`;
 
-    const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }],
-      }),
-    });
+    // OpenRouter 호출 — 빈/깨진 응답(일시적 오류)이면 1회 자동 재시도.
+    async function askAI() {
+      const rr = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }],
+        }),
+      });
+      return { ok: rr.ok, raw: await rr.text() };
+    }
 
-    if (!r.ok) {
-      const t = await r.text();
-      await logRun({ advertiser, level, landing, drive, insight: "", rec: "", error: "생성 서버 오류: " + t.slice(0, 300) });
-      res.status(502).json({ error: "생성 서버 오류", detail: t.slice(0, 500) });
+    let resp = await askAI();
+    if (resp.ok && !resp.raw.trim()) resp = await askAI(); // 빈 응답이면 한 번 더 시도
+
+    if (!resp.ok) {
+      await logRun({ advertiser, level, landing, drive, insight: "", rec: "", error: "생성 서버 오류: " + resp.raw.slice(0, 300) });
+      res.status(502).json({ error: "생성 서버 오류", detail: resp.raw.slice(0, 500) });
       return;
     }
-    const data = await r.json();
+    if (!resp.raw.trim()) {
+      await logRun({ advertiser, level, landing, drive, insight: "", rec: "", error: "AI 응답이 비어 있습니다(일시적 오류로 보입니다). 잠시 후 다시 시도해 주세요." });
+      res.status(502).json({ error: "AI 응답이 비어 왔습니다. 잠시 후 다시 한 번 시도해 주세요." });
+      return;
+    }
+    let data;
+    try {
+      data = JSON.parse(resp.raw);
+    } catch (_) {
+      await logRun({ advertiser, level, landing, drive, insight: "", rec: "", error: "AI 응답 해석 실패: " + resp.raw.slice(0, 200) });
+      res.status(502).json({ error: "AI 응답을 해석하지 못했습니다. 다시 시도해 주세요." });
+      return;
+    }
     const text = data?.choices?.[0]?.message?.content || "(생성 결과가 비어 있습니다)";
     const parts = splitSections(text);
     await logRun({ advertiser, level, landing, drive, insight: parts.p4, rec: parts.p5, error: "" });
