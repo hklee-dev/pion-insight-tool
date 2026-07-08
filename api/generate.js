@@ -122,6 +122,7 @@ export default async function handler(req, res) {
         },
         body: JSON.stringify({
           model: MODEL,
+          max_tokens: 3000, // 출력 상한 — 생성 시간을 Vercel 60초 제한 안(≈50초)으로 묶는다. 간결한 4·5엔 충분.
           messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }],
         }),
       });
