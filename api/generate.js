@@ -62,6 +62,16 @@ function splitSections(text) {
   return { p4: p4.trim(), p5: p5.trim() };
 }
 
+// 응답이 max_tokens에 걸려 문장 중간에 끊겼을 때, 마지막으로 완결된 문장까지만 남긴다.
+// (예: "...나타나기 시작했습니다. 주말(토·일)" → "...나타나기 시작했습니다.")
+function trimToLastSentence(s) {
+  const t = String(s || "").trimEnd();
+  const m = t.match(/[\s\S]*(?:다|요)\.(?=\s|$|\))/); // 한국어 종결(–다./–요.)의 마지막 지점까지
+  if (m && m[0].trim().length > 50) return m[0].trim();
+  const lastDot = t.lastIndexOf(".");
+  return lastDot > 50 ? t.slice(0, lastDot + 1).trim() : t;
+}
+
 async function fetchGoogleDoc(link) {
   const docId = extractDocId(link);
   if (!docId) return { error: "올바른 구글 문서 링크가 아닙니다." };
@@ -124,7 +134,7 @@ export default async function handler(req, res) {
         },
         body: JSON.stringify({
           model: MODEL,
-          max_tokens: 2800, // 한 섹션 상한 — 병렬이라 각 ~40초, 벽시계 ~45초로 60초 안. 한 섹션 완결엔 충분.
+          max_tokens: 3200, // 한 섹션 상한 — 병렬 동시호출이라 각 ~49초(65토큰/초)로 60초 안. 소재·지면 많은 긴 보고서 대비 여유(기존 2800에서 상향).
           messages: [
             { role: "system", content: SYSTEM },
             { role: "user", content: baseUser + "\n" + instruction },
@@ -132,14 +142,19 @@ export default async function handler(req, res) {
         }),
       });
       const raw = await rr.text();
-      if (!rr.ok) return { ok: false, content: "", err: raw.slice(0, 200) };
-      let content = "";
-      if (raw.trim()) { try { content = JSON.parse(raw)?.choices?.[0]?.message?.content || ""; } catch (_) {} }
-      return { ok: true, content: content.trim(), err: "" };
+      if (!rr.ok) return { ok: false, content: "", err: raw.slice(0, 200), truncated: false };
+      let content = "", finish = "";
+      if (raw.trim()) {
+        try { const j = JSON.parse(raw); content = j?.choices?.[0]?.message?.content || ""; finish = j?.choices?.[0]?.finish_reason || ""; } catch (_) {}
+      }
+      let out = content.trim();
+      const truncated = finish === "length";
+      if (truncated) out = trimToLastSentence(out); // max_tokens에 걸려 잘렸으면 끊긴 조각 제거 → 마지막 완결 문장까지만.
+      return { ok: true, content: out, err: "", truncated };
     }
 
     const [ins, rec] = await Promise.all([
-      askAI(`이번 응답에는 "4. 인사이트"만 작성해. "5. 향후 제언"은 별도로 작성되니 여기서는 절대 쓰지 마. 인사이트는 진단(무엇이 보였고 왜 그런가)까지만. [다음 단계]·다음 할 일·실행 제안 소제목은 넣지 마 — 그건 제언(5번) 몫이다.`),
+      askAI(`이번 응답에는 "4. 인사이트"만 작성해. "5. 향후 제언"은 별도로 작성되니 여기서는 절대 쓰지 마. 인사이트는 진단(무엇이 보였고 왜 그런가)까지만. [다음 단계]·다음 할 일·실행 제안 소제목은 넣지 마 — 그건 제언(5번) 몫이다. 각 대괄호 블록은 핵심만 4–6문장 이내로 압축하고 숫자 나열 대신 의미 위주로 써서, 인사이트 전체가 과도하게 길어져 마지막 블록이 잘리지 않게 해.`),
       askAI(`이번 응답에는 "5. 향후 제언"만 작성해. "4. 인사이트"는 별도로 작성되니 진단을 길게 재서술하지 말고, 바로 실행 제언(① ② ③ …)만 써.`),
     ]);
 
@@ -158,7 +173,8 @@ export default async function handler(req, res) {
       .replace(/([0-9])\s*[~～〜]\s*([0-9])/g, "$1–$2")
       .replace(/です/g, "다");
     const parts = splitSections(text);
-    await logRun({ advertiser, level, landing, drive, insight: parts.p4, rec: parts.p5, error: "" });
+    const warn = (ins.truncated || rec.truncated) ? "[경고] 응답이 max_tokens에 걸려 마지막 완결 문장까지 트림됨(내용 일부 축약 가능)" : "";
+    await logRun({ advertiser, level, landing, drive, insight: parts.p4, rec: parts.p5, error: warn });
     res.status(200).json({ text });
   } catch (e) {
     await logRun({ advertiser: "", level, landing, drive, insight: "", rec: "", error: "요청 처리 오류: " + String(e).slice(0, 300) });
