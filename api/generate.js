@@ -172,6 +172,11 @@ export default async function handler(req, res) {
     text = text
       .replace(/([0-9])\s*[~～〜]\s*([0-9])/g, "$1–$2")
       .replace(/です/g, "다");
+    // 입점몰(자사몰 아님) 랜딩이면 UTM 언급 문장을 통째 제거 — 규칙: 입점몰엔 UTM을 아예 언급하지 않는다
+    // (스마트스토어는 UTM 추적 자체가 불가). 프롬프트 규칙을 모델이 어겨도 결과엔 안 나오게 방어.
+    if (landing && !/자사몰/.test(landing)) {
+      text = text.replace(/\s*[^.\n]*UTM[^.\n]*\.?/gi, "").replace(/[ \t]{2,}/g, " ");
+    }
     const parts = splitSections(text);
     const warn = (ins.truncated || rec.truncated) ? "[경고] 응답이 max_tokens에 걸려 마지막 완결 문장까지 트림됨(내용 일부 축약 가능)" : "";
     await logRun({ advertiser, level, landing, drive, insight: parts.p4, rec: parts.p5, error: warn });
