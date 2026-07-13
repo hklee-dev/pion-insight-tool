@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SNS 정부지원사업 최종 보고서 인사이트 생성기</title>
+<title>SNS 정부지원사업 최종 보고서 향후 제언 생성기</title>
 <style>
   :root{--bg:#FAFAF9;--panel:#fff;--ink:#1A1A1A;--muted:#6A6A6A;--faint:#9A9A9A;--line:#E2E2DF;--focus:#2C6E9B;
         --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;}
@@ -43,8 +43,8 @@
 <body>
 <div class="container">
   <header>
-    <h1>SNS 정부지원사업 최종 보고서 인사이트 생성기</h1>
-    <div class="sub">보고서 링크·카톡 CSV·조건을 넣으면 4·5번 인사이트·제언을 작성합니다. 결과를 복사해 보고서에 붙여넣으세요.</div>
+    <h1>SNS 정부지원사업 최종 보고서 향후 제언 생성기</h1>
+    <div class="sub">보고서 링크·카톡 CSV·조건을 넣으면 "4. 향후 제언"을 작성합니다. 결과를 복사해 보고서에 붙여넣으세요.</div>
   </header>
 
   <div class="layout">
@@ -77,14 +77,14 @@
             <option>자사몰 (직접 도메인)</option>
           </select>
         </div>
-        <button class="gen" id="gen" disabled>인사이트 생성</button>
+        <button class="gen" id="gen" disabled>향후 제언 생성</button>
         <div class="hint" style="text-align:center;margin-top:8px">네 항목을 모두 입력하면 버튼이 활성화됩니다.</div>
       </div>
     </section>
 
     <section class="card">
-      <div class="rhead"><h2>결과 · 4·5번</h2><span id="copybtns" style="display:none"><button class="copy" id="copy4">4번 복사</button> <button class="copy" id="copy5" style="margin-left:6px">5번 복사</button></span></div>
-      <div class="empty" id="empty">왼쪽에 보고서 링크·카톡 CSV를 넣고 <b>인사이트 생성</b>을 누르세요.</div>
+      <div class="rhead"><h2>결과 · 향후 제언</h2><span id="copybtns" style="display:none"><button class="copy" id="copy">복사</button></span></div>
+      <div class="empty" id="empty">왼쪽에 보고서 링크·카톡 CSV를 넣고 <b>향후 제언 생성</b>을 누르세요.</div>
       <div class="out" id="out" style="display:none"></div>
       <div class="err" id="err" style="display:none"></div>
     </section>
@@ -93,7 +93,7 @@
 
 <script>
   var gen=document.getElementById('gen'),empty=document.getElementById('empty'),out=document.getElementById('out'),
-      err=document.getElementById('err'),copybtns=document.getElementById('copybtns'),copy4=document.getElementById('copy4'),copy5=document.getElementById('copy5'),
+      err=document.getElementById('err'),copybtns=document.getElementById('copybtns'),copy=document.getElementById('copy'),
       drive=document.getElementById('drive'),csv=document.getElementById('csv'),
       level=document.getElementById('level'),landing=document.getElementById('landing');
 
@@ -128,20 +128,16 @@
     }catch(e){err.textContent='오류: '+e.message;err.style.display='block';}
     gen.textContent='다시 생성';refresh();
   });
-  function splitParts(){
-    var t=out.textContent||'';
-    var i=t.indexOf('5. 향후 제언');
-    var p4=(i>=0?t.slice(0,i):t).replace(/^\s*4\.\s*인사이트\s*\n+/,'').trim();
-    var p5=(i>=0?t.slice(i):'').replace(/^\s*5\.\s*향후\s*제언\s*\n+/,'').trim();
-    return {p4:p4,p5:p5};
+  function bodyOnly(){
+    // "4. 향후 제언" 헤더는 복사에서 제외(본문만 붙여넣기).
+    return (out.textContent||'').replace(/^\s*4\.\s*향후\s*제언\s*\n+/,'').trim();
   }
   function doCopy(btn,text,label){
     if(!text){alert('복사할 내용이 없습니다.');return;}
     navigator.clipboard&&navigator.clipboard.writeText(text);
     btn.textContent='복사됨 ✓';setTimeout(function(){btn.textContent=label;},1500);
   }
-  copy4.addEventListener('click',function(){doCopy(copy4,splitParts().p4,'4번 복사');});
-  copy5.addEventListener('click',function(){doCopy(copy5,splitParts().p5,'5번 복사');});
+  copy.addEventListener('click',function(){doCopy(copy,bodyOnly(),'복사');});
 </script>
 </body>
 </html>
